@@ -35,3 +35,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# PERSONA ATS sync outputs
+downloads/
+summaries/
+logs/
+state/
