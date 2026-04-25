@@ -1,5 +1,4 @@
-# Resume Summary Tool
-
+# レジュメ要約ツール
 ShareXのスクロールキャプチャから作成したPDFをOCRし、個人情報をマスクしたうえでOpenAI APIに渡し、採用向けの経歴要約を生成するツールです。
 
 ## 主な機能
@@ -139,4 +138,13 @@ https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/jpn.traineddata
 
 次のフォルダに置く
 C:\Program Files\Tesseract-OCR\tessdata\
+
+## 今後の改善予定
+
+現在はレジュメ要約を主な対象としていますが、今後はミイダスのいいねユーザーに対して、
+経歴要約とスカウトメッセージ案の作成を一連の流れで行えるようにすることを検討しています。
+
+これにより、候補者確認からスカウト文面作成までの作業時間短縮を目指します。
+
+別途なお、実際の時短効果や運用可否については、別途検証が必要です。
 
