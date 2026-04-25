@@ -67,7 +67,7 @@ ZIPを解凍（またはgit clone）すると、summarize_resume というフォ
 以下のコマンドを実行して、ダウンロードしたフォルダに移動します。
 
 ```bash
-cd summarize_resume
+cd "summarize_resume"
 ```
 
 その後、仮想環境を作成・有効化します。
