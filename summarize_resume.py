@@ -65,7 +65,7 @@ ADDRESS_PATTERN = re.compile(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="OCR済みPDFから文字を抽出し、個人情報をマスクしたうえで OpenAI API による候補者要約を行います。"
+        description="OCR済みPDFから文字を抽出し、個人情報をマスクしたうえで OpenAI API による候補者の経歴要約を行います。"
     )
     parser.add_argument("pdf_path", help="OCR済みPDFファイルのパス")
     parser.add_argument(
