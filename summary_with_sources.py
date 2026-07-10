@@ -7,6 +7,8 @@ from typing import List, Dict
 import fitz  # PyMuPDF
 from openai import OpenAI
 
+from summarize_resume import sanitize_text
+
 """
 概要:
 OCR済みPDFからテキストを抽出し、
@@ -139,6 +141,7 @@ def extract_pdf_text_by_page(pdf_path: Path) -> List[Dict[str, str]]:
     for idx, page in enumerate(doc, start=1):
         text = page.get_text("text")
         text = normalize_text(text)
+        text = sanitize_text(text)
         sections = detect_sections(text)
         section_str = " / ".join(sections) if sections else "不明"
 
