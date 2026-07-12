@@ -21,7 +21,7 @@ from summarize_resume import (
     summarize_text,
     validate_inputs,
 )
-# ミイダス向けスカウトメール作成
+# スカウト媒体向けスカウトメール作成
 from scout_mail import (
     DEFAULT_CANDIDATE_ACTION as DEFAULT_SCOUT_CANDIDATE_ACTION,
     DEFAULT_DESIRED_LOCATIONS as DEFAULT_SCOUT_DESIRED_LOCATIONS,
@@ -126,17 +126,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--desired-roles",
         default=os.getenv("SCOUT_DESIRED_ROLES", DEFAULT_SCOUT_DESIRED_ROLES),
-        help="候補者の希望職種。既定値: 特販部 / 営業",
+        help="候補者の希望職種。既定値: 営業職",
     )
     parser.add_argument(
         "--desired-locations",
         default=os.getenv("SCOUT_DESIRED_LOCATIONS", DEFAULT_SCOUT_DESIRED_LOCATIONS),
-        help="候補者の希望勤務地。既定値: 名古屋 / 仙台 / 岡山",
+        help="候補者の希望勤務地。既定値: 東京",
     )
     parser.add_argument(
         "--work-location",
         default=os.getenv("SCOUT_WORK_LOCATION", DEFAULT_SCOUT_WORK_LOCATION),
-        help="文面で触れる勤務地。既定値: 名古屋",
+        help="文面で触れる勤務地。既定値: 東京",
     )
     parser.add_argument(
         "--sender-name",

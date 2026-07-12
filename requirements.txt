@@ -3,6 +3,3 @@ pillow==12.2.0
 openai==2.32.0
 pyperclip==1.11.0
 ocrmypdf==17.4.2
-
-# requests is only needed by persona_ats_sync.py (PERSONA ATS integration)
-requests==2.33.1

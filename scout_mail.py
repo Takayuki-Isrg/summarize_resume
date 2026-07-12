@@ -21,23 +21,23 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_CANDIDATE_ACTION = "気になる"
 DEFAULT_POSITION = "営業"
 DEFAULT_DESIRED_ROLES = "営業"
-DEFAULT_DESIRED_LOCATIONS = "名古屋 / 仙台"
-DEFAULT_WORK_LOCATION = "名古屋"
+DEFAULT_DESIRED_LOCATIONS = "東京"
+DEFAULT_WORK_LOCATION = "東京"
 DEFAULT_TONE = "感謝 → 共感 → 軽い提案。フラットで丁寧、押し売り感は出さない"
 TEXT_ENCODINGS = ("utf-8", "utf-8-sig", "cp932")
 MAX_RESUME_CONTEXT_CHARS = 12000
 
 DEFAULT_PROMPT = """\
-あなたはミイダス運用に精通した採用担当者です。
+あなたはスカウト媒体運用に精通した採用担当者です。
 入力される候補者情報は、OCR済みレジュメから抽出し、個人連絡先をマスク済みの情報です。
 
-以下の条件を満たす「ミイダスで“気になる”などのリアクションをしてくれたユーザー向けスカウトメール文面」を作成してください。
+以下の条件を満たす「スカウト媒体で“気になる”などのリアクションをしてくれたユーザー向けスカウトメール文面」を作成してください。
 
 【前提】
-- 媒体: ミイダス
+- 媒体: スカウト媒体
 - 対象: 「気になる」または入力された候補者アクションをしてくれたユーザー
-- 手動作成の対象媒体は現状ミイダスのみ
-- PG/SE/特販希望ユーザーからの「いいね」は少ないため、営業職向けを標準にする
+- 手動作成の対象媒体は現状スカウト媒体のみ
+- PG/SE希望ユーザーからの「いいね」は少ないため、営業職向けを標準にする
 - 目的:
   - 「興味を持ってくれてありがとう」という姿勢を伝える
   - 警戒心を下げ、「一度話を聞いてみようかな」と思ってもらう
@@ -51,7 +51,7 @@ DEFAULT_PROMPT = """\
 【必ず盛り込む内容】
 1. 冒頭で候補者アクションをしてくれたことへのお礼
 2. なぜ連絡したのか（希望職種・志向とポジションの接点）
-3. 特販部／営業職の簡単な特徴・魅力
+3. 営業職の簡単な特徴・魅力
    - お客様との関係性
    - 提案の幅や裁量
 4. 勤務地で働くイメージが湧く一言
@@ -61,7 +61,7 @@ DEFAULT_PROMPT = """\
 【表現上の注意】
 - 「スカウト感」より「リアクションへのお返事」に近い温度感
 - 上から目線・選考感は出さない
-- ミイダスでよくある定型文っぽさを避ける
+- スカウト媒体でよくある定型文っぽさを避ける
 - 候補者アクション欄が「いいね」の場合は、件名・本文も「いいね」に合わせる
 - 氏名・メールアドレス・電話番号・住所などの個人連絡先には触れない
 - レジュメに書かれていない経験・スキル・志向性を推測で補完しない
@@ -247,17 +247,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--desired-roles",
         default=os.getenv("SCOUT_DESIRED_ROLES", DEFAULT_DESIRED_ROLES),
-        help="候補者の希望職種。既定値: 特販部 / 営業",
+        help="候補者の希望職種。既定値: 営業職",
     )
     parser.add_argument(
         "--desired-locations",
         default=os.getenv("SCOUT_DESIRED_LOCATIONS", DEFAULT_DESIRED_LOCATIONS),
-        help="候補者の希望勤務地。既定値: 名古屋 / 仙台 / 岡山",
+        help="候補者の希望勤務地。既定値: 東京",
     )
     parser.add_argument(
         "--work-location",
         default=os.getenv("SCOUT_WORK_LOCATION", DEFAULT_WORK_LOCATION),
-        help="文面で触れる勤務地。既定値: 名古屋",
+        help="文面で触れる勤務地。既定値: 東京",
     )
     parser.add_argument(
         "--sender-name",
