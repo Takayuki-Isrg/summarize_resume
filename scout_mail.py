@@ -5,19 +5,18 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from llm_provider import LLMClient, build_llm_client, get_provider, resolve_model
 from summarize_resume import (
     DEFAULT_PROMPT as RESUME_SUMMARY_PROMPT,
     extract_text_from_pdf,
     maybe_copy,
     maybe_save,
-    require_openai,
     sanitize_text,
     summarize_text,
     validate_inputs,
 )
 
 
-DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_CANDIDATE_ACTION = "気になる"
 DEFAULT_POSITION = "営業"
 DEFAULT_DESIRED_ROLES = "営業"
@@ -149,27 +148,12 @@ def build_user_prompt(request: ScoutMailRequest) -> str:
 
 
 def generate_scout_mail(
-    client,
+    llm_client: LLMClient,
     model: str,
     request: ScoutMailRequest,
     prompt: str = DEFAULT_PROMPT,
 ) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": prompt}],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": build_user_prompt(request)}
-                ],
-            },
-        ],
-    )
-    return response.output_text.strip()
+    return llm_client.complete(model, prompt, build_user_prompt(request))
 
 
 def read_text_file(path: str | None) -> str:
@@ -199,12 +183,12 @@ def read_text_path(path: Path) -> str:
     )
 
 
-def build_summary_from_pdf(client, model: str, pdf_path: Path) -> tuple[str, str]:
+def build_summary_from_pdf(llm_client: LLMClient, model: str, pdf_path: Path) -> tuple[str, str]:
     validate_inputs(pdf_path)
     extracted_text = extract_text_from_pdf(pdf_path)
     sanitized_text = sanitize_text(extracted_text)
     summary_text = summarize_text(
-        client,
+        llm_client,
         model,
         RESUME_SUMMARY_PROMPT,
         sanitized_text,
@@ -226,8 +210,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default=os.getenv("SCOUT_MODEL") or os.getenv("OPENAI_MODEL") or DEFAULT_MODEL,
-        help=f"使用するモデル名。既定値: {DEFAULT_MODEL}",
+        default=None,
+        help="使用するモデル名。未指定時は選択中のプロバイダーの <PROVIDER>_MODEL 環境変数を使用します。",
     )
     parser.add_argument(
         "--company-name",
@@ -299,8 +283,9 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    if not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("環境変数 OPENAI_API_KEY が設定されていません。")
+    provider = get_provider()
+    model = resolve_model(provider, args.model)
+    llm_client = build_llm_client(provider)
 
     source_path = Path(args.source_path).expanduser().resolve()
     if not source_path.exists():
@@ -311,13 +296,10 @@ def main() -> None:
     if file_context:
         job_context = f"{job_context}\n\n{file_context}".strip()
 
-    OpenAI = require_openai()
-    client = OpenAI()
-
     if source_path.suffix.lower() == ".pdf":
         candidate_summary, sanitized_resume_text = build_summary_from_pdf(
-            client,
-            args.model,
+            llm_client,
+            model,
             source_path,
         )
         summary_output_path = (
@@ -344,7 +326,7 @@ def main() -> None:
         tone=args.tone,
     )
 
-    scout_mail = generate_scout_mail(client, args.model, request)
+    scout_mail = generate_scout_mail(llm_client, model, request)
 
     output_path = (
         Path(args.save) if args.save else source_path.with_suffix(".scout-mail.txt")

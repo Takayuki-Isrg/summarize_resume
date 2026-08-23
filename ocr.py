@@ -10,13 +10,13 @@ from time import perf_counter
 
 from PIL import Image
 
+from llm_provider import LLMClient, build_llm_client, get_provider, resolve_model
 from summarize_resume import (
     build_parser as build_summary_parser,
     extract_text_from_pdf,
     maybe_copy,
     maybe_save,
     normalize_text,
-    require_openai,
     sanitize_text,
     summarize_text,
     validate_inputs,
@@ -78,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         default=summary_parser.get_default("model"),
-        help=f"使用するモデル名。既定値: {summary_parser.get_default('model')}",
+        help="使用するモデル名。未指定時は選択中のプロバイダーの <PROVIDER>_MODEL 環境変数を使用します。",
     )
     parser.add_argument(
         "--prompt",
@@ -374,7 +374,7 @@ def extract_pdf_text_after_ocr(pdf_path: Path, min_text_chars: int, logger: logg
 
 
 def summarize_ocr_pdf(
-    pdf_path: Path, model: str, prompt: str, logger: logging.Logger
+    pdf_path: Path, llm_client: LLMClient, model: str, prompt: str, logger: logging.Logger
 ) -> tuple[str, str, str]:
     logger.info("要約対象 PDF を検証します: %s", pdf_path)
     validate_inputs(pdf_path)
@@ -385,6 +385,7 @@ def summarize_ocr_pdf(
 
     summary_text, sanitized_text = summarize_extracted_text(
         extracted_text,
+        llm_client,
         model,
         prompt,
         logger,
@@ -394,6 +395,7 @@ def summarize_ocr_pdf(
 
 def summarize_extracted_text(
     extracted_text: str,
+    llm_client: LLMClient,
     model: str,
     prompt: str,
     logger: logging.Logger,
@@ -403,13 +405,11 @@ def summarize_extracted_text(
         sanitized_text = sanitize_text(extracted_text)
         logger.info("sanitize 後文字数: %s", len(sanitized_text))
 
-    logger.info("OpenAI クライアントを初期化します")
-    openai_class = require_openai()
-    client = openai_class()
-
     with timed_step(logger, "経歴要約生成"):
-        logger.info("OpenAI API に要約リクエストを送信します。model=%s", model)
-        summary_text = summarize_text(client, model, prompt, sanitized_text)
+        logger.info(
+            "%s API に要約リクエストを送信します。model=%s", llm_client.provider, model
+        )
+        summary_text = summarize_text(llm_client, model, prompt, sanitized_text)
         logger.info("要約取得完了。文字数: %s", len(summary_text))
 
     return summary_text, sanitized_text
@@ -426,6 +426,8 @@ def generate_mail_from_summary(
     summary_text: str,
     sanitized_text: str,
     args: argparse.Namespace,
+    llm_client: LLMClient,
+    model: str,
     logger: logging.Logger,
 ) -> str:
     job_context = build_job_context(args.job_context, args.job_context_file, logger)
@@ -443,13 +445,13 @@ def generate_mail_from_summary(
         tone=args.mail_tone,
     )
 
-    logger.info("OpenAI クライアントを初期化します（スカウトメール生成）")
-    openai_class = require_openai()
-    client = openai_class()
-
     with timed_step(logger, "スカウトメール生成"):
-        logger.info("OpenAI API にスカウトメール生成リクエストを送信します。model=%s", args.model)
-        scout_mail = generate_scout_mail(client, args.model, request)
+        logger.info(
+            "%s API にスカウトメール生成リクエストを送信します。model=%s",
+            llm_client.provider,
+            model,
+        )
+        scout_mail = generate_scout_mail(llm_client, model, request)
         logger.info("スカウトメール取得完了。文字数: %s", len(scout_mail))
     return scout_mail
 
@@ -464,10 +466,16 @@ def main() -> None:
         args = parser.parse_args()
         if args.copy_mail or args.mail_save:
             args.scout_mail = True
+
+        provider = get_provider()
+        model = resolve_model(provider, args.model)
+        llm_client = build_llm_client(provider)
+
         logger.info(
-            "引数: input_path=%s, model=%s, copy=%s, scout_mail=%s, copy_mail=%s, language=%s, save=%s, mail_save=%s, keep_intermediate=%s, min_text_chars=%s",
+            "引数: input_path=%s, provider=%s, model=%s, copy=%s, scout_mail=%s, copy_mail=%s, language=%s, save=%s, mail_save=%s, keep_intermediate=%s, min_text_chars=%s",
             args.input_path,
-            args.model,
+            provider,
+            model,
             args.copy,
             args.scout_mail,
             args.copy_mail,
@@ -519,7 +527,8 @@ def main() -> None:
 
         summary_text, sanitized_text = summarize_extracted_text(
             extracted_text,
-            args.model,
+            llm_client,
+            model,
             args.prompt,
             logger,
         )
@@ -550,6 +559,8 @@ def main() -> None:
                 summary_text,
                 sanitized_text,
                 args,
+                llm_client,
+                model,
                 logger,
             )
             mail_output_txt = (

@@ -1,12 +1,12 @@
 import argparse
-import os
 import re
 from pathlib import Path
 
 import fitz  # PyMuPDF
 
+from llm_provider import LLMClient, build_llm_client, get_provider, resolve_model
 
-DEFAULT_MODEL = "gpt-4.1-mini"
+
 DEFAULT_PROMPT = """\
 あなたは採用担当者向けに候補者レジュメを要約するアシスタントです。
 入力される本文は OCR 済み PDF から抽出し、個人連絡先をマスク済みのテキストです。
@@ -70,8 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("pdf_path", help="OCR済みPDFファイルのパス")
     parser.add_argument(
         "--model",
-        default=DEFAULT_MODEL,
-        help=f"使用するモデル名。既定値: {DEFAULT_MODEL}",
+        default=None,
+        help="使用するモデル名。未指定時は選択中のプロバイダーの <PROVIDER>_MODEL 環境変数を使用します。",
     )
     parser.add_argument(
         "--prompt",
@@ -90,16 +90,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def require_openai():
-    try:
-        from openai import OpenAI
-    except ImportError as exc:
-        raise SystemExit(
-            "openai パッケージがインストールされていません。`pip install openai` を実行してください。"
-        ) from exc
-    return OpenAI
-
-
 def validate_inputs(pdf_path: Path) -> None:
     if not pdf_path.exists():
         raise SystemExit(f"ファイルが見つかりません: {pdf_path}")
@@ -107,8 +97,6 @@ def validate_inputs(pdf_path: Path) -> None:
         raise SystemExit(f"ファイルではありません: {pdf_path}")
     if pdf_path.suffix.lower() != ".pdf":
         raise SystemExit("PDFファイルを指定してください。")
-    if not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("環境変数 OPENAI_API_KEY が設定されていません。")
 
 
 def normalize_text(text: str) -> str:
@@ -146,30 +134,13 @@ def sanitize_text(text: str) -> str:
     return sanitized
 
 
-def summarize_text(client, model: str, prompt: str, source_text: str) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": prompt}],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": (
-                            "以下は OCR 済み PDF から抽出し、連絡先情報をマスクした候補者レジュメ本文です。\n"
-                            "採用判断に有用な情報だけを拾って要約してください。\n\n"
-                            f"{source_text}"
-                        ),
-                    }
-                ],
-            },
-        ],
+def summarize_text(llm_client: LLMClient, model: str, prompt: str, source_text: str) -> str:
+    user_prompt = (
+        "以下は OCR 済み PDF から抽出し、連絡先情報をマスクした候補者レジュメ本文です。\n"
+        "採用判断に有用な情報だけを拾って要約してください。\n\n"
+        f"{source_text}"
     )
-    return response.output_text.strip()
+    return llm_client.complete(model, prompt, user_prompt)
 
 
 def maybe_save(summary_text: str, output_path: str | None) -> None:
@@ -197,12 +168,14 @@ def main() -> None:
     pdf_path = Path(args.pdf_path).expanduser().resolve()
     validate_inputs(pdf_path)
 
+    provider = get_provider()
+    model = resolve_model(provider, args.model)
+    llm_client = build_llm_client(provider)
+
     extracted_text = extract_text_from_pdf(pdf_path)
     sanitized_text = sanitize_text(extracted_text)
 
-    OpenAI = require_openai()
-    client = OpenAI()
-    summary_text = summarize_text(client, args.model, args.prompt, sanitized_text)
+    summary_text = summarize_text(llm_client, model, args.prompt, sanitized_text)
 
     maybe_save(summary_text, args.save)
     maybe_copy(summary_text, args.copy)

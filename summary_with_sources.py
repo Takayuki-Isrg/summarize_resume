@@ -1,12 +1,11 @@
 import argparse
-import os
 import re
 from pathlib import Path
 from typing import List, Dict
 
 import fitz  # PyMuPDF
-from openai import OpenAI
 
+from llm_provider import LLMClient, build_llm_client, get_provider, resolve_model
 from summarize_resume import sanitize_text
 
 """
@@ -30,8 +29,6 @@ python summary_with_sources.py <pdf_path> --copy
 - pyperclip（任意）
 """
 
-
-DEFAULT_MODEL = "gpt-4.1-mini"
 
 DEFAULT_PROMPT = """\
 あなたは採用担当向けの要約アシスタントです。
@@ -81,8 +78,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("pdf_path", help="OCR済みPDFのパス")
     parser.add_argument(
         "--model",
-        default=DEFAULT_MODEL,
-        help=f"使用モデル。既定: {DEFAULT_MODEL}",
+        default=None,
+        help="使用するモデル名。未指定時は選択中のプロバイダーの <PROVIDER>_MODEL 環境変数を使用します。",
     )
     parser.add_argument(
         "--save",
@@ -108,8 +105,6 @@ def validate_inputs(pdf_path: Path) -> None:
         raise SystemExit(f"Not a file: {pdf_path}")
     if pdf_path.suffix.lower() != ".pdf":
         raise SystemExit("Please provide a PDF file.")
-    if not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("Environment variable OPENAI_API_KEY is not set.")
 
 
 def normalize_text(text: str) -> str:
@@ -165,33 +160,14 @@ def build_model_input(pages: List[Dict[str, str]]) -> str:
     return "\n\n" + ("\n\n" + ("-" * 60) + "\n\n").join(chunks)
 
 
-def summarize_text(client: OpenAI, model: str, prompt: str, source_text: str) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[
-            {
-                "role": "system",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                ],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": (
-                            "以下はOCR済みPDFからページ単位で抽出した本文です。\n"
-                            "各箇条書きの末尾に、必ず [出典: Page X] または "
-                            "[出典: Page X / セクション名] を付けてください。\n\n"
-                            f"{source_text}"
-                        ),
-                    }
-                ],
-            },
-        ],
+def summarize_text(llm_client: LLMClient, model: str, prompt: str, source_text: str) -> str:
+    user_prompt = (
+        "以下はOCR済みPDFからページ単位で抽出した本文です。\n"
+        "各箇条書きの末尾に、必ず [出典: Page X] または "
+        "[出典: Page X / セクション名] を付けてください。\n\n"
+        f"{source_text}"
     )
-    return response.output_text.strip()
+    return llm_client.complete(model, prompt, user_prompt)
 
 
 def save_text(text: str, output_path: Path) -> None:
@@ -213,6 +189,10 @@ def main() -> None:
     pdf_path = Path(args.pdf_path).expanduser().resolve()
     validate_inputs(pdf_path)
 
+    provider = get_provider()
+    model = resolve_model(provider, args.model)
+    llm_client = build_llm_client(provider)
+
     pages = extract_pdf_text_by_page(pdf_path)
     source_text = build_model_input(pages)
 
@@ -220,10 +200,9 @@ def main() -> None:
         dump_path = pdf_path.with_suffix(".ocrtext.txt")
         save_text(source_text, dump_path)
 
-    client = OpenAI()
     summary = summarize_text(
-        client=client,
-        model=args.model,
+        llm_client=llm_client,
+        model=model,
         prompt=DEFAULT_PROMPT,
         source_text=source_text,
     )
