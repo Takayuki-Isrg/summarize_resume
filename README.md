@@ -116,7 +116,7 @@ OCR済みPDFの要約だけを `run.ps1` で実行する場合:
 
 ### スカウトメール生成
 
-ShareX のキャプチャー結果から OCR、要約、スカウトメール生成まで一括実行する場合:lm
+ShareX のキャプチャー結果から OCR、要約、スカウトメール生成まで一括実行する場合:
 
 ```powershell
 python ocr.py "画像またはPDFパス" --scout-mail --copy-mail --company-name "株式会社サンプル"
