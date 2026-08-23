@@ -163,10 +163,10 @@ python scout_mail.py "要約テキストパス" --copy --candidate-action "い�
 
 ### 初回セットアップ（setup.ps1）
 
-Python 3.12 を想定しています。未インストールの場合は先に導入してください。
+Python 3.11.9 を想定しています。未インストールの場合は先に導入してください。
 
 ```powershell
-winget install --id Python.Python.3.12 -e
+winget install --id Python.Python.3.11.9 -e
 python --version
 ```
 
@@ -187,7 +187,7 @@ python --version
 `setup.ps1` を使わない場合は、Python・ShareX・Tesseract OCR（日本語OCRエンジン）をまとめてインストールします。
 
 ```powershell
-winget install --id Python.Python.3.12 -e
+winget install --id Python.Python.3.11.9 -e
 winget install --id ShareX.ShareX -e
 winget install --id UB-Mannheim.TesseractOCR -e
 
