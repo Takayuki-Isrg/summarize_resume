@@ -15,6 +15,7 @@ from summarize_resume import (
     summarize_text,
     validate_inputs,
 )
+from llm_client import generate_text, validate_llm_config
 
 
 DEFAULT_MODEL = "gpt-4.1-mini"
@@ -154,22 +155,7 @@ def generate_scout_mail(
     request: ScoutMailRequest,
     prompt: str = DEFAULT_PROMPT,
 ) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": prompt}],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": build_user_prompt(request)}
-                ],
-            },
-        ],
-    )
-    return response.output_text.strip()
+    return generate_text(client, model, prompt, build_user_prompt(request))
 
 
 def read_text_file(path: str | None) -> str:
@@ -299,8 +285,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    if not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("環境変数 OPENAI_API_KEY が設定されていません。")
+    validate_llm_config()
 
     source_path = Path(args.source_path).expanduser().resolve()
     if not source_path.exists():

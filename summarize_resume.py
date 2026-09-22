@@ -1,9 +1,10 @@
 import argparse
-import os
 import re
 from pathlib import Path
 
 import fitz  # PyMuPDF
+
+from llm_client import create_llm_client, generate_text, validate_llm_config
 
 
 DEFAULT_MODEL = "gpt-4.1-mini"
@@ -65,7 +66,7 @@ ADDRESS_PATTERN = re.compile(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="OCR済みPDFから文字を抽出し、個人情報をマスクしたうえで OpenAI API による候補者の経歴要約を行います。"
+        description="OCR済みPDFを抽出・マスクし、設定したLLMで候補者の経歴を要約します。"
     )
     parser.add_argument("pdf_path", help="OCR済みPDFファイルのパス")
     parser.add_argument(
@@ -91,13 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def require_openai():
-    try:
-        from openai import OpenAI
-    except ImportError as exc:
-        raise SystemExit(
-            "openai パッケージがインストールされていません。`pip install openai` を実行してください。"
-        ) from exc
-    return OpenAI
+    """Backward-compatible factory used by the other command modules."""
+    return create_llm_client
 
 
 def validate_inputs(pdf_path: Path) -> None:
@@ -107,8 +103,7 @@ def validate_inputs(pdf_path: Path) -> None:
         raise SystemExit(f"ファイルではありません: {pdf_path}")
     if pdf_path.suffix.lower() != ".pdf":
         raise SystemExit("PDFファイルを指定してください。")
-    if not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("環境変数 OPENAI_API_KEY が設定されていません。")
+    validate_llm_config()
 
 
 def normalize_text(text: str) -> str:
@@ -147,29 +142,14 @@ def sanitize_text(text: str) -> str:
 
 
 def summarize_text(client, model: str, prompt: str, source_text: str) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[
-            {
-                "role": "system",
-                "content": [{"type": "input_text", "text": prompt}],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": (
-                            "以下は OCR 済み PDF から抽出し、連絡先情報をマスクした候補者レジュメ本文です。\n"
-                            "採用判断に有用な情報だけを拾って要約してください。\n\n"
-                            f"{source_text}"
-                        ),
-                    }
-                ],
-            },
-        ],
+    return generate_text(
+        client,
+        model,
+        prompt,
+        "以下は OCR 済み PDF から抽出し、連絡先情報をマスクした候補者レジュメ本文です。\n"
+        "採用判断に有用な情報だけを拾って要約してください。\n\n"
+        f"{source_text}",
     )
-    return response.output_text.strip()
 
 
 def maybe_save(summary_text: str, output_path: str | None) -> None:

@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 
@@ -39,6 +40,15 @@ LOG_PATH = Path(__file__).with_name("sharex_resume.log")
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 PDF_EXTENSION = ".pdf"
 DEFAULT_MIN_TEXT_CHARS = 200
+
+
+@dataclass(frozen=True)
+class ResumeProcessingResult:
+    summary_text: str
+    output_path: Path
+    extracted_text: str
+    sanitized_text: str
+    ocr_pdf_path: Path | None = None
 
 
 @contextmanager
@@ -454,6 +464,61 @@ def generate_mail_from_summary(
     return scout_mail
 
 
+def process_resume_file(
+    input_path: Path,
+    *,
+    model: str,
+    prompt: str,
+    language: str = "jpn",
+    min_text_chars: int = DEFAULT_MIN_TEXT_CHARS,
+    output_path: Path | None = None,
+    logger: logging.Logger | None = None,
+) -> ResumeProcessingResult:
+    """Run the OCR-to-summary pipeline shared by the CLI and GUI."""
+    logger = logger or setup_logger()
+    input_path = input_path.expanduser().resolve()
+    if not input_path.exists():
+        raise SystemExit(f"入力ファイルが見つかりません: {input_path}")
+    if not input_path.is_file():
+        raise SystemExit(f"ファイルではありません: {input_path}")
+
+    input_kind = detect_input_kind(input_path)
+    logger.info("入力ファイル: %s (%s)", input_path, input_kind)
+    ocr_pdf_path: Path | None = None
+    output_base_path = build_output_base_path(input_path)
+
+    if input_kind == "image":
+        with timed_step(logger, "画像OCR"):
+            extracted_text = run_image_ocr(input_path, language, logger)
+    else:
+        with timed_step(logger, "PDFテキスト抽出"):
+            extracted_text = try_extract_pdf_text(input_path, min_text_chars, logger)
+        if not extracted_text:
+            with timed_step(logger, "PDF OCR"):
+                ocr_pdf_path = run_ocr(input_path, language, logger)
+            output_base_path = ocr_pdf_path
+            with timed_step(logger, "OCR済みPDFテキスト抽出"):
+                extracted_text = extract_pdf_text_after_ocr(
+                    ocr_pdf_path, min_text_chars, logger
+                )
+
+    summary_text, sanitized_text = summarize_extracted_text(
+        extracted_text, model, prompt, logger
+    )
+    maybe_save(extracted_text, str(output_base_path.with_suffix(".ocrtext.txt")))
+    maybe_save(sanitized_text, str(output_base_path.with_suffix(".sanitized.txt")))
+
+    summary_path = output_path or output_base_path.with_suffix(".summary.txt")
+    maybe_save(summary_text, str(summary_path))
+    return ResumeProcessingResult(
+        summary_text=summary_text,
+        output_path=summary_path,
+        extracted_text=extracted_text,
+        sanitized_text=sanitized_text,
+        ocr_pdf_path=ocr_pdf_path,
+    )
+
+
 def main() -> None:
     logger = setup_logger()
     logger.info("========== ShareX OCR/要約 開始 ==========")
@@ -478,66 +543,21 @@ def main() -> None:
             args.min_text_chars,
         )
 
-        with timed_step(logger, "入力判定"):
-            input_path = Path(args.input_path).expanduser().resolve()
-            logger.info("入力ファイル絶対パス: %s", input_path)
-            if not input_path.exists():
-                raise SystemExit(f"入力ファイルが見つかりません: {input_path}")
-            if not input_path.is_file():
-                raise SystemExit(f"ファイルではありません: {input_path}")
-            input_kind = detect_input_kind(input_path)
-            logger.info("入力形式: %s", input_kind)
-
-        ocr_pdf_path: Path | None = None
-        output_base_path = build_output_base_path(input_path)
-
-        with timed_step(logger, "前処理"):
-            if input_kind == "image":
-                logger.info("画像入力のためPDF化をスキップし、直接OCRします")
-                with timed_step(logger, "画像OCR"):
-                    extracted_text = run_image_ocr(input_path, args.language, logger)
-            else:
-                with timed_step(logger, "PDFテキスト抽出"):
-                    extracted_text = try_extract_pdf_text(
-                        input_path,
-                        args.min_text_chars,
-                        logger,
-                    )
-
-                if extracted_text:
-                    logger.info("PDF OCRをスキップします: %s", input_path)
-                else:
-                    with timed_step(logger, "PDF OCR"):
-                        ocr_pdf_path = run_ocr(input_path, args.language, logger)
-                    output_base_path = ocr_pdf_path
-                    with timed_step(logger, "OCR済みPDFテキスト抽出"):
-                        extracted_text = extract_pdf_text_after_ocr(
-                            ocr_pdf_path,
-                            args.min_text_chars,
-                            logger,
-                        )
-
-        summary_text, sanitized_text = summarize_extracted_text(
-            extracted_text,
-            args.model,
-            args.prompt,
-            logger,
+        input_path = Path(args.input_path)
+        result = process_resume_file(
+            input_path,
+            model=args.model,
+            prompt=args.prompt,
+            language=args.language,
+            min_text_chars=args.min_text_chars,
+            output_path=Path(args.save) if args.save else None,
+            logger=logger,
         )
-
-        ocr_text_path = output_base_path.with_suffix(".ocrtext.txt")
-        sanitized_text_path = output_base_path.with_suffix(".sanitized.txt")
-        with timed_step(logger, "抽出テキスト保存"):
-            logger.info("抽出テキストを保存します: %s", ocr_text_path)
-            maybe_save(extracted_text, str(ocr_text_path))
-            logger.info("sanitize 後テキストを保存します: %s", sanitized_text_path)
-            maybe_save(sanitized_text, str(sanitized_text_path))
-
-        output_txt = (
-            Path(args.save) if args.save else output_base_path.with_suffix(".summary.txt")
-        )
-        with timed_step(logger, "要約保存"):
-            logger.info("要約を保存します: %s", output_txt)
-            maybe_save(summary_text, str(output_txt))
+        summary_text = result.summary_text
+        sanitized_text = result.sanitized_text
+        output_txt = result.output_path
+        ocr_pdf_path = result.ocr_pdf_path
+        output_base_path = ocr_pdf_path or build_output_base_path(input_path.resolve())
 
         if args.copy:
             logger.info("要約をクリップボードへコピーします")

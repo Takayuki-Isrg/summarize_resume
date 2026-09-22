@@ -1,11 +1,10 @@
 import argparse
-import os
 import re
 from pathlib import Path
 from typing import List, Dict
 
 import fitz  # PyMuPDF
-from openai import OpenAI
+from llm_client import create_llm_client, generate_text, validate_llm_config
 
 from summarize_resume import sanitize_text
 
@@ -108,8 +107,7 @@ def validate_inputs(pdf_path: Path) -> None:
         raise SystemExit(f"Not a file: {pdf_path}")
     if pdf_path.suffix.lower() != ".pdf":
         raise SystemExit("Please provide a PDF file.")
-    if not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("Environment variable OPENAI_API_KEY is not set.")
+    validate_llm_config()
 
 
 def normalize_text(text: str) -> str:
@@ -165,33 +163,16 @@ def build_model_input(pages: List[Dict[str, str]]) -> str:
     return "\n\n" + ("\n\n" + ("-" * 60) + "\n\n").join(chunks)
 
 
-def summarize_text(client: OpenAI, model: str, prompt: str, source_text: str) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[
-            {
-                "role": "system",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                ],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": (
-                            "以下はOCR済みPDFからページ単位で抽出した本文です。\n"
-                            "各箇条書きの末尾に、必ず [出典: Page X] または "
-                            "[出典: Page X / セクション名] を付けてください。\n\n"
-                            f"{source_text}"
-                        ),
-                    }
-                ],
-            },
-        ],
+def summarize_text(client, model: str, prompt: str, source_text: str) -> str:
+    return generate_text(
+        client,
+        model,
+        prompt,
+        "以下はOCR済みPDFからページ単位で抽出した本文です。\n"
+        "各箇条書きの末尾に、必ず [出典: Page X] または "
+        "[出典: Page X / セクション名] を付けてください。\n\n"
+        f"{source_text}",
     )
-    return response.output_text.strip()
 
 
 def save_text(text: str, output_path: Path) -> None:
@@ -220,7 +201,7 @@ def main() -> None:
         dump_path = pdf_path.with_suffix(".ocrtext.txt")
         save_text(source_text, dump_path)
 
-    client = OpenAI()
+    client = create_llm_client()
     summary = summarize_text(
         client=client,
         model=args.model,

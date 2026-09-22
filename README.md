@@ -93,6 +93,53 @@ ShareXでスクロールキャプチャ
 
 ## 実行例
 
+### GUI（Phase 1）
+
+PySide6製のGUIからPDFまたは画像を選び、「要約」を押すと、既存CLIと同じ
+OCR・個人情報マスク・LLM要約処理を実行します。結果は画面表示に加えて、入力
+ファイルと同じ場所へ `*.summary.txt` として保存されます。
+
+```powershell
+python gui.py
+```
+
+起動時にファイルを選択済みにすることもできます（自動実行は未対応です）。
+
+```powershell
+python gui.py "C:\path\resume.png"
+```
+
+APIキーやLLMプロバイダーは、下記のCLIと同じ環境変数を使用します。OCRが必要な
+画像・PDFでは、従来どおりTesseract、ocrmypdf、Ghostscriptが必要です。
+
+### LLMプロバイダーの切り替え
+
+既定は OpenAI API です。ローカルLLM、OpenRouter、OrcaRouter は OpenAI互換の
+`/v1/chat/completions` エンドポイントとして利用できます。モデル名は各環境で
+公開されている名前を `--model` に指定してください。
+
+```powershell
+# OpenAI
+$Env:LLM_PROVIDER="openai"; $Env:OPENAI_API_KEY="sk-..."
+python summarize_resume.py "resume.pdf" --model gpt-4.1-mini
+
+# ローカルLLM（既定: Ollama の http://localhost:11434/v1）
+$Env:LLM_PROVIDER="local"
+python summarize_resume.py "resume.pdf" --model llama3.2
+
+# OpenRouter
+$Env:LLM_PROVIDER="openrouter"; $Env:OPENROUTER_API_KEY="..."
+python summarize_resume.py "resume.pdf" --model "プロバイダー上のモデル名"
+
+# OrcaRouter（互換APIのURLとキーを明示）
+$Env:LLM_PROVIDER="orcarouter"; $Env:LLM_BASE_URL="https://example.com/v1"; $Env:LLM_API_KEY="..."
+python summarize_resume.py "resume.pdf" --model "ルーター上のモデル名"
+```
+
+ローカルサーバーのURLを変える場合も `LLM_BASE_URL` を設定します。認証が必要な
+ローカルサーバーでは `LLM_API_KEY` も設定してください。これらの設定は
+`ocr.py`、`scout_mail.py`、`summary_with_sources.py` にも共通で適用されます。
+
 ### 通常の一括実行（ocr.py）
 
 ShareXでキャプチャした画像（またはOCR前のPDF）から、OCR・要約・クリップボードコピーまでを一括で行います。
