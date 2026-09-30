@@ -50,42 +50,30 @@ ShareXでキャプチャした画像やPDFを入力として渡すだけで、OC
 
 ## 処理フロー
 
-```
-ShareXでスクロールキャプチャ
-        │
-        ▼
-   入力形式を自動判定（PNG / JPG / PDF）
-        │
-    ┌───┴───┐
-    ▼           ▼
-  画像         PDF
-    │           │
-  直接OCR    テキスト抽出を試行
-    │           │
-    │      抽出できた場合はそのまま利用
-    │      抽出できない、または
-    │      文字数がしきい値未満の場合のみOCR
-    │           │
-    └─────┬─────┘
-          ▼
-     個人情報マスク
-          │
-          ▼
-     経歴要約を生成
-          │
-          ▼
-   スカウトメール案を生成
-          │
-          ▼
-    クリップボードへコピー
+```mermaid
+flowchart TD
+    A["画像またはPDFを指定"] --> B{"入力形式"}
+    B -->|画像| C["Tesseractで直接OCR"]
+    B -->|PDF| D["PyMuPDFでテキスト抽出"]
+    D --> E{"200文字以上か"}
+    E -->|はい| F["抽出結果を使用"]
+    E -->|いいえ| G["OCRmyPDFでOCR"]
+    C --> H["連絡先情報をマスク"]
+    F --> H
+    G --> H
+    H --> I["経歴要約を生成・保存"]
+    I --> J{"--scout-mail指定"}
+    J -->|あり| K["メール案を生成・保存"]
+    J -->|なし| L["終了"]
 ```
 
 ## 技術構成
 
-- Python 3.12（動作確認環境）
-- OpenAI API（経歴要約・スカウトメール生成）
+- Python 3.11.9（動作確認環境）
+- OpenAI API / ローカルLLM（Ollama等） / OrcaRouter（経歴要約・スカウトメール生成。`LLM_PROVIDER` で切り替え）
 - Tesseract OCR（画像および日本語OCR）
 - ocrmypdf（PDFへのOCR適用）
+- Ghostscript（ocrmypdfが内部で使用。Windowsでは手動インストールが必要）
 - ShareX（スクロールキャプチャ・After capture tasksからの自動実行）
 - PowerShell（セットアップ・実行スクリプト）
 - PDF / 画像 / テキスト処理
@@ -151,7 +139,7 @@ python ocr.py "画像またはPDFのパス" --copy
 主なオプション:
 - `--copy`: 要約結果をクリップボードにもコピー
 - `--save <path>`: 要約結果の保存先を指定（未指定時はOCR後のPDFと同じ場所）
-- `--model <name>`: 使用するモデル名（既定: gpt-4.1-mini）
+- `--model <name>`: 使用するモデル名（未指定時は選択中プロバイダーの `<PROVIDER>_MODEL` 環境変数を使用）
 - `--language <lang>`: ocrmypdfに渡すOCR言語（既定: jpn）
 - `--keep-intermediate`: 中間生成物のPDFを残す
 - `--min-text-chars <n>`: PDFテキスト抽出で十分とみなす最小文字数（既定: 200）
@@ -222,10 +210,10 @@ python scout_mail.py "要約テキストパス" --copy --candidate-action "い�
 
 ### 初回セットアップ（setup.ps1）
 
-Python 3.12 を想定しています。未インストールの場合は先に導入してください。
+Python 3.11.9 を想定しています。未インストールの場合は先に導入してください。
 
 ```powershell
-winget install --id Python.Python.3.12 -e
+winget install --id Python.Python.3.11.9 -e
 python --version
 ```
 
@@ -246,7 +234,7 @@ python --version
 `setup.ps1` を使わない場合は、Python・ShareX・Tesseract OCR（日本語OCRエンジン）をまとめてインストールします。
 
 ```powershell
-winget install --id Python.Python.3.12 -e
+winget install --id Python.Python.3.11.9 -e
 winget install --id ShareX.ShareX -e
 winget install --id UB-Mannheim.TesseractOCR -e
 
@@ -254,7 +242,23 @@ winget install --id UB-Mannheim.TesseractOCR -e
 python --version
 ```
 
-### 2. 日本語OCRデータの配置
+### 2. Ghostscriptのインストール（ocrmypdf に必要）
+
+ocrmypdf はPDF処理のためにGhostscriptを利用します。Ghostscriptはwinget等でのサイレントインストールに対応していないため、公式サイトから手動でインストールしてください。
+
+1. [Ghostscriptダウンロードページ](https://ghostscript.com/releases/gsdnld.html)からWindows 64-bit版のインストーラーをダウンロード
+2. インストーラーを実行し、既定のオプションでインストール
+3. 新しいPowerShellを開き、認識されているか確認
+
+```powershell
+gswin64c --version
+```
+
+ocrmypdfはWindowsレジストリや`Program Files`の標準インストール先を自動的に検出するため、通常はPATHへの追加は不要です。`gswin64c`が見つからない場合のみ、インストール先（例: `C:\Program Files\gs\gs10.xx.x\bin`）をPATH環境変数に追加してください。
+
+Ghostscriptが未インストールの状態で`ocr.py`のPDF OCR処理を実行すると、`ocrmypdf`がエラーで停止します。
+
+### 3. 日本語OCRデータの配置
 
 Tesseractの日本語モデルをダウンロードし、`tessdata`フォルダに配置します。
 
@@ -264,9 +268,46 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/tesseract-ocr/tessdata
 
 うまくいかない場合は、[配布元ページ](https://github.com/tesseract-ocr/tessdata/blob/main/jpn.traineddata)から手動でダウンロードし、`C:\Program Files\Tesseract-OCR\tessdata\` に置いてください。
 
-### 3. OpenAI APIキーの発行と設定
+### 4. 利用するLLMプロバイダーの設定
 
-本ツールでは OpenAI API を使用します。[こちら](https://platform.openai.com/login?next=%2Fapi-keys)でAPIキーを発行し、環境変数に設定してください。
+本ツールは `LLM_PROVIDER` 環境変数で、経歴要約・スカウトメール生成に使うAPIを切り替えられます。
+
+- `openai`: OpenAI API（既定）
+- `local`: ローカルLLM（Ollama など、OpenAI互換の Chat Completions エンドポイントを公開しているもの）
+- `orcarouter`: OrcaRouter（OpenAI互換の外部ルーティングサービス）
+
+設定は `.env.example` をコピーして `.env` を作成し、値を編集する方法を推奨します（`.env` はGit管理対象外です）。
+
+```powershell
+Copy-Item .env.example .env
+```
+
+`.env` の内容:
+
+```
+# 使用するプロバイダー: openai / local / orcarouter
+LLM_PROVIDER=openai
+
+# OpenAI
+OPENAI_API_KEY=
+OPENAI_MODEL=
+
+# ローカルLLM（Ollama）
+LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+LOCAL_LLM_API_KEY=ollama
+LOCAL_LLM_MODEL=
+
+# OrcaRouter
+ORCAROUTER_API_KEY=
+ORCAROUTER_BASE_URL=https://api.orcarouter.ai/v1
+ORCAROUTER_MODEL=orcarouter/auto
+```
+
+- `OPENAI_API_KEY` は[こちら](https://platform.openai.com/login?next=%2Fapi-keys)で発行できます。
+- `local` を使う場合は、事前にOllama等でOpenAI互換エンドポイント（既定: `http://localhost:11434/v1`）を起動しておいてください。`LOCAL_LLM_API_KEY` はSDK初期化に必要なダミー値で、秘密情報ではありません。
+- `OPENAI_MODEL` / `LOCAL_LLM_MODEL` は未設定だとエラーになります。使用するモデル名を必ず設定するか、実行時に `--model` オプションで指定してください（`ORCAROUTER_MODEL` のみ既定値 `orcarouter/auto` があります）。
+
+`.env` を使わず、OSの環境変数に直接設定することもできます。
 
 ```powershell
 setx OPENAI_API_KEY "your_api_key_here"
@@ -280,7 +321,7 @@ macOS / Linuxの場合:
 export OPENAI_API_KEY="sk-..."
 ```
 
-### 4. リポジトリの取得
+### 5. リポジトリの取得
 
 Gitを利用できる場合は、以下で取得してください。
 
@@ -291,7 +332,7 @@ cd summarize_resume
 
 Gitを使わない場合は、[ZIPファイル](https://github.com/Takayuki-Isrg/summarize_resume/archive/refs/heads/main.zip)をダウンロードして任意の場所に解凍し、`summarize_resume`フォルダに移動してください。
 
-### 5. 仮想環境の作成と依存関係のインストール
+### 6. 仮想環境の作成と依存関係のインストール
 
 `setup.ps1` を使わない場合は、手動で仮想環境を作成します。
 
@@ -331,8 +372,9 @@ OCRおよび要約精度は、入力となるPDFの形式に依存します。
 事前に以下をインストールしてください。
 
 - Tesseract OCR（セットアップ手順 1 でインストール）
+- Ghostscript（セットアップ手順 2 でインストール。ocrmypdf が内部で使用）
 - ocrmypdf（`requirements.txt` に含まれます）
-- jpn.traineddata（セットアップ手順 2 で配置）
+- jpn.traineddata（セットアップ手順 3 で配置）
 
 ## セキュリティ・個人情報に関する注意
 
@@ -368,6 +410,14 @@ OCRおよび要約精度は、入力となるPDFの形式に依存します。
 なお、実際の送信前には、候補者情報・求人内容・法務/コンプライアンス観点を人手で確認してください。
 
 ## 変更履歴
+
+### 2026-08-23
+- README: Ghostscriptのインストール手順（セットアップ手順2）を追記。ocrmypdfが依存しているにもかかわらず記載が無く、環境構築時に気づきにくかったため。winget等でのサイレントインストールに対応していないため、手動インストール手順として明記。
+- `llm_provider.py` を新設し、`LLM_PROVIDER` 環境変数で OpenAI API / ローカルLLM（Ollama等） / OrcaRouter を切り替えられるようにした。
+- `.env.example` を追加。`python-dotenv` により `.env` を自動読み込みするようにした（`.env` は既存どおりGit管理対象外）。
+- `summarize_resume.py` / `scout_mail.py` / `summary_with_sources.py` / `ocr.py` の OpenAI クライアント生成・API呼び出しを `llm_provider.py` 経由に統一。OpenAIプロバイダーは既存の Responses API を維持し、ローカルLLM / OrcaRouter は OpenAI互換の Chat Completions を使用する。
+- モデル名の暗黙のデフォルト（`gpt-4.1-mini`固定）を廃止。`--model` 未指定時は `<PROVIDER>_MODEL` 環境変数を使用し、未設定ならエラーで明示するように変更（`orcarouter` のみ既定値 `orcarouter/auto` を維持）。
+- `tests/test_llm_provider.py` を追加（`pytest`、`requirements-dev.txt`）。
 
 ### 2026-07-10
 - README: 実行手順を実態に合わせて修正（`ocr.py` による一括実行を主な手順として明記）。セットアップ手順を再構成して簡素化。

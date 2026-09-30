@@ -3,9 +3,9 @@ $ErrorActionPreference = "Stop"
 function Get-PythonCommand {
     $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
     if ($pyLauncher) {
-        & py -3.12 --version *> $null
+        & py -3.11.9 --version *> $null
         if ($LASTEXITCODE -eq 0) {
-            return @{ Command = "py"; Arguments = @("-3.12") }
+            return @{ Command = "py"; Arguments = @("-3.11.9") }
         }
 
         & py -3 --version *> $null
@@ -22,7 +22,7 @@ function Get-PythonCommand {
         }
     }
 
-    throw "Python が見つかりません。README の手順に従って Python 3.12 をインストールしてください。"
+    throw "Python が見つかりません。README の手順に従って Python 3.11.9 をインストールしてください。"
 }
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
