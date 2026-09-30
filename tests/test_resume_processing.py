@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from ocr import process_resume_file
 
@@ -9,6 +9,7 @@ def test_process_resume_file_reuses_pdf_pipeline_and_saves_summary(tmp_path):
     source = tmp_path / "resume.pdf"
     source.write_bytes(b"dummy")
     logger = logging.getLogger("test_process_resume_file")
+    llm_client=Mock(),
 
     with (
         patch("ocr.try_extract_pdf_text", return_value="[Page 1]\n経歴"),
@@ -18,6 +19,7 @@ def test_process_resume_file_reuses_pdf_pipeline_and_saves_summary(tmp_path):
             source,
             model="test-model",
             prompt="test-prompt",
+            llm_client=llm_client,
             logger=logger,
         )
 

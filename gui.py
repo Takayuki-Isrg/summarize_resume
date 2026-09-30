@@ -19,8 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from llm_provider import build_llm_client, get_provider, resolve_model
 from ocr import process_resume_file
-from summarize_resume import DEFAULT_MODEL, DEFAULT_PROMPT
+from summarize_resume import DEFAULT_PROMPT
 
 
 class SummaryWorker(QObject):
@@ -35,9 +36,14 @@ class SummaryWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
+            provider = get_provider()
+            model = resolve_model(provider, None)
+            llm_client = build_llm_client(provider)
+
             result = process_resume_file(
                 self.input_path,
-                model=DEFAULT_MODEL,
+                llm_client=llm_client,
+                model=model,
                 prompt=DEFAULT_PROMPT,
             )
             self.succeeded.emit(result.summary_text, str(result.output_path))
@@ -45,7 +51,6 @@ class SummaryWorker(QObject):
             self.failed.emit(str(exc))
         finally:
             self.finished.emit()
-
 
 class MainWindow(QMainWindow):
     def __init__(self, initial_path: Path | None = None):
